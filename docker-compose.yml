@@ -1,0 +1,58 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pqc_eval
+    ports:
+      - "5432:5432"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - db
+    volumes:
+      - ./app:/app/app
+      - ./scripts:/app/scripts
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/pqc_eval
+      # add these for Stage 3 db.py
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: pqc_eval
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    command: bash -lc "/app/scripts/wait-for-postgres.sh db 5432 && python -m app.stage3"
+
+  benchmark:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - db
+    volumes:
+      - ./app:/app/app
+      - ./scripts:/app/scripts
+      - ./results:/app/results
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: pqc_eval
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      BENCHMARK_ARGS:
+    # Override iterations/sizes via BENCHMARK_ARGS env var, e.g.:
+    #   BENCHMARK_ARGS="--iterations 5 --warmup 1" docker compose run benchmark
+    command: >
+      bash -lc "
+        /app/scripts/wait-for-postgres.sh db 5432 &&
+        mkdir -p /app/results &&
+        python -m app.benchmark --output /app/results/benchmark_results.json $${BENCHMARK_ARGS:-}
+      "
+    profiles:
+      - benchmark

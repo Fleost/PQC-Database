@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(cmake:*)",
+      "Bash(sudo apt-get:*)",
+      "Bash(apt-get install:*)",
+      "Bash(conda install:*)",
+      "Bash(docker info:*)",
+      "Bash(docker compose:*)",
+      "Bash(chmod 777:*)",
+      "Bash(sudo chmod:*)",
+      "Bash(python3:*)",
+      "Bash(sudo chown:*)",
+      "Bash(BENCHMARK_ARGS=\"--iterations 200 --warmup 10\" docker compose:*)",
+      "Bash(git:*)"
+    ]
+  }
+}
