@@ -38,6 +38,7 @@ services:
     volumes:
       - ./app:/app/app
       - ./scripts:/app/scripts
+      - ./Data:/app/Data
       - ./results:/app/results
     environment:
       PGHOST: db

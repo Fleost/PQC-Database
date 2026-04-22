@@ -95,6 +95,10 @@ class DbEncryptedRow:
 
     pq_ct: Optional[bytes]
 
+    sig_alg_id: Optional[str]
+    signature:  Optional[bytes]
+    sig_key_id: Optional[str]
+
     created_at: Any
     updated_at: Any
     deleted_at: Any
@@ -129,6 +133,10 @@ ALTER TABLE encrypted_records ADD COLUMN IF NOT EXISTS salt           BYTEA NOT 
 ALTER TABLE encrypted_records ADD COLUMN IF NOT EXISTS hkdf_info      BYTEA NOT NULL DEFAULT ''::bytea;
 ALTER TABLE encrypted_records ADD COLUMN IF NOT EXISTS pq_ct          BYTEA NULL;
 
+ALTER TABLE encrypted_records ADD COLUMN IF NOT EXISTS sig_alg_id     TEXT  NULL;
+ALTER TABLE encrypted_records ADD COLUMN IF NOT EXISTS signature       BYTEA NULL;
+ALTER TABLE encrypted_records ADD COLUMN IF NOT EXISTS sig_key_id      TEXT  NULL;
+
 ALTER TABLE encrypted_records ADD COLUMN IF NOT EXISTS created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE encrypted_records ADD COLUMN IF NOT EXISTS updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE encrypted_records ADD COLUMN IF NOT EXISTS deleted_at     TIMESTAMPTZ NULL;
@@ -148,6 +156,17 @@ DO $$ BEGIN
       (scheme = 'classical' AND pq_kem_id IS NULL AND pq_ct IS NULL)
       OR
       (scheme = 'hybrid' AND pq_kem_id IS NOT NULL AND pq_ct IS NOT NULL)
+    );
+EXCEPTION WHEN others THEN
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE encrypted_records
+    DROP CONSTRAINT IF EXISTS chk_sig_fields,
+    ADD  CONSTRAINT chk_sig_fields CHECK (
+      (sig_alg_id IS NULL AND signature IS NULL AND sig_key_id IS NULL)
+      OR
+      (sig_alg_id IS NOT NULL AND signature IS NOT NULL AND sig_key_id IS NOT NULL)
     );
 EXCEPTION WHEN others THEN
 END $$;
@@ -230,6 +249,9 @@ def insert_record(
     salt: bytes,
     hkdf_info: bytes,
     pq_ct: Optional[bytes],
+    sig_alg_id: Optional[str] = None,
+    signature: Optional[bytes] = None,
+    sig_key_id: Optional[str] = None,
 ) -> Tuple[int, float]:
     """Returns (new_id, db_ms)."""
     t0 = time.perf_counter()
@@ -241,11 +263,13 @@ def insert_record(
                scheme, payload_cipher, kem_id, kdf_id, wrap_id, pq_kem_id,
                aad, nonce, tag, ciphertext, wrapped_dek, eph_pubkey,
                salt, hkdf_info, pq_ct,
+               sig_alg_id, signature, sig_key_id,
                created_at, updated_at, deleted_at)
             VALUES
               (%s, %s, %s,
                %s, %s, %s, %s, %s, %s,
                %s, %s, %s, %s, %s, %s,
+               %s, %s, %s,
                %s, %s, %s,
                NOW(), NOW(), NULL)
             RETURNING id
@@ -269,6 +293,9 @@ def insert_record(
                 salt,
                 hkdf_info,
                 pq_ct,
+                sig_alg_id,
+                signature,
+                sig_key_id,
             ),
         )
         new_id = cur.fetchone()[0]
@@ -309,6 +336,9 @@ def fetch_record(
               salt,
               hkdf_info,
               pq_ct,
+              sig_alg_id,
+              signature,
+              sig_key_id,
               created_at,
               updated_at,
               deleted_at
@@ -346,9 +376,12 @@ def fetch_record(
         salt=bytes(r[16]),
         hkdf_info=bytes(r[17]),
         pq_ct=(None if r[18] is None else bytes(r[18])),
-        created_at=r[19],
-        updated_at=r[20],
-        deleted_at=r[21],
+        sig_alg_id=(None if r[19] is None else str(r[19])),
+        signature=(None if r[20] is None else bytes(r[20])),
+        sig_key_id=(None if r[21] is None else str(r[21])),
+        created_at=r[22],
+        updated_at=r[23],
+        deleted_at=r[24],
     )
     return row, db_ms
 
@@ -364,8 +397,21 @@ def update_wrap_fields(
     salt: bytes,
     pq_ct: Optional[bytes],
     pq_kem_id: Optional[str],
+    sig_alg_id: Optional[str] = None,
+    signature: Optional[bytes] = None,
+    sig_key_id: Optional[str] = None,
 ) -> float:
-    """Update only fields that should change for an envelope 'rewrap' rotation."""
+    """Update only fields that should change for an envelope 'rewrap' rotation.
+
+    Rotation changes wrapped_dek, eph_pubkey, salt, and pq_ct — all of which
+    are covered by the ML-DSA envelope commitment.  Callers must therefore
+    either supply a freshly computed signature (sig_alg_id/signature/sig_key_id
+    all set) or explicitly clear it (all three left as None, the default).
+
+    Leaving sig_alg_id=None clears the signature columns so the rotated record
+    becomes unsigned.  This is the correct safe default when the caller cannot
+    re-sign at rotation time.
+    """
     t0 = time.perf_counter()
     with conn.cursor() as cur:
         cur.execute(
@@ -377,10 +423,17 @@ def update_wrap_fields(
                 salt=%s,
                 pq_ct=%s,
                 pq_kem_id=%s,
+                sig_alg_id=%s,
+                signature=%s,
+                sig_key_id=%s,
                 updated_at=NOW()
             WHERE tenant_id=%s AND id=%s AND deleted_at IS NULL
             """,
-            (new_key_id, wrapped_dek, eph_pubkey, salt, pq_ct, pq_kem_id, tenant_id, record_id),
+            (
+                new_key_id, wrapped_dek, eph_pubkey, salt, pq_ct, pq_kem_id,
+                sig_alg_id, signature, sig_key_id,
+                tenant_id, record_id,
+            ),
         )
         if cur.rowcount != 1:
             raise KeyError(f"record_id {record_id} not found (or deleted) for tenant '{tenant_id}'")

@@ -5,7 +5,12 @@ Crypto layer: classical and hybrid post-quantum envelope encryption.
 
 Implements two schemes on top of AES-256-GCM:
   classical — X25519-ECDH + HKDF-SHA256 + AES-KW
-  hybrid    — X25519-ECDH + ML-KEM-768 + HKDF-SHA256 + AES-KW
+  hybrid    — X25519-ECDH + ML-KEM-{512,768,1024} + HKDF-SHA256 + AES-KW
+
+Supported PQ KEM parameter sets (NIST FIPS 203 / ML-KEM):
+  ML-KEM-512   — NIST security level 1
+  ML-KEM-768   — NIST security level 3 (default)
+  ML-KEM-1024  — NIST security level 5
 
 Public API:
   encrypt(plaintext, scheme=..., ...)  -> EncryptedRecord
@@ -13,12 +18,15 @@ Public API:
   generate_classical_recipient_keys()  -> ClassicalRecipientKeys
   generate_hybrid_recipient_keys(...)  -> HybridRecipientKeys
   envelope_sizes(record)               -> Dict[str, int]
+  validate_pq_kem_id(kem_id)           -> None  (raises ValueError if unsupported)
 
 Run the built-in smoke test:
   python -m app.stage2
 """
 from __future__ import annotations
 
+import dataclasses
+import struct
 from dataclasses import dataclass
 from typing import Optional, Dict, Protocol, Tuple
 import os
@@ -46,8 +54,40 @@ WRAP_ID_AES_KW = "AES-KW-RFC3394"
 DEFAULT_HKDF_INFO_CLASSICAL = b"dek-wrap:v1:classical"
 DEFAULT_HKDF_INFO_HYBRID = b"dek-wrap:v1:hybrid"
 
-# oqs typically supports "ML-KEM-768" (newer) or "Kyber768" (older).
+# Supported ML-KEM parameter sets (NIST FIPS 203).
+# oqs typically supports "ML-KEM-NNN" (newer) or "KyberNNN" (older liboqs builds).
+SUPPORTED_PQ_KEM_IDS = ["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"]
 DEFAULT_PQ_KEM_ID = "ML-KEM-768"
+
+# Supported ML-DSA parameter sets (NIST FIPS 204).
+# Historical names: Dilithium2 / Dilithium3 / Dilithium5 (older liboqs builds).
+SUPPORTED_PQ_SIG_IDS = ["ML-DSA-44", "ML-DSA-65", "ML-DSA-87"]
+DEFAULT_PQ_SIG_ID: Optional[str] = None  # None = unsigned mode
+
+# Domain separator for the canonical envelope commitment (prevents cross-context misuse).
+COMMITMENT_DOMAIN_V1 = b"pqc-db-eval:envelope-commitment:v1"
+
+
+class SigVerificationError(Exception):
+    """Raised when ML-DSA signature verification fails on an envelope."""
+
+
+def validate_pq_kem_id(kem_id: str) -> None:
+    """Raise ValueError if kem_id is not a supported ML-KEM parameter set."""
+    if kem_id not in SUPPORTED_PQ_KEM_IDS:
+        raise ValueError(
+            f"Unsupported PQ KEM identifier: {kem_id!r}. "
+            f"Must be one of: {', '.join(SUPPORTED_PQ_KEM_IDS)}"
+        )
+
+
+def validate_pq_sig_id(sig_id: str) -> None:
+    """Raise ValueError if sig_id is not a supported ML-DSA parameter set."""
+    if sig_id not in SUPPORTED_PQ_SIG_IDS:
+        raise ValueError(
+            f"Unsupported PQ signature identifier: {sig_id!r}. "
+            f"Must be one of: {', '.join(SUPPORTED_PQ_SIG_IDS)}"
+        )
 
 
 def _now_ms() -> float:
@@ -131,6 +171,86 @@ class OQSKEMBackend:
 
 
 # -----------------------------
+# PQ Signature backend (oqs)
+# -----------------------------
+
+class OQSSigBackend:
+    """
+    oqs-python backend for ML-DSA digital signatures (NIST FIPS 204).
+
+    Handles standardized "ML-DSA-*" names and falls back to historical
+    Dilithium{2,3,5} names for older liboqs builds.
+    """
+    def __init__(self, sig_id: str = "ML-DSA-65"):
+        import oqs
+        self._oqs = oqs
+        self.sig_id = sig_id
+
+        # Primary: standardized ML-DSA names (liboqs >= 0.12.0).
+        # Fallback: historical Dilithium names used by older liboqs builds.
+        self._name_candidates = [sig_id]
+        if sig_id == "ML-DSA-44":
+            self._name_candidates.append("Dilithium2")
+        elif sig_id == "ML-DSA-65":
+            self._name_candidates.append("Dilithium3")
+        elif sig_id == "ML-DSA-87":
+            self._name_candidates.append("Dilithium5")
+
+    def _new_sig(self, secret_key: Optional[bytes] = None):
+        last_err = None
+        for name in self._name_candidates:
+            try:
+                if secret_key is not None:
+                    return self._oqs.Signature(name, secret_key)
+                return self._oqs.Signature(name)
+            except Exception as e:
+                last_err = e
+        raise ValueError(
+            f"oqs: could not create Signature for {self.sig_id} "
+            f"(tried {self._name_candidates})."
+        ) from last_err
+
+    def keygen(self) -> Tuple[bytes, bytes]:
+        """Generate a key pair. Returns (verify_key, signing_key)."""
+        with self._new_sig() as sig:
+            vk = sig.generate_keypair()
+            sk = sig.export_secret_key()
+            return vk, sk
+
+    def sign(self, message: bytes, signing_key: bytes) -> bytes:
+        """Sign message with the given secret key."""
+        last_err = None
+        for name in self._name_candidates:
+            try:
+                with self._oqs.Signature(name, signing_key) as sig:
+                    return sig.sign(message)
+            except TypeError:
+                try:
+                    with self._oqs.Signature(name, secret_key=signing_key) as sig:
+                        return sig.sign(message)
+                except Exception as e:
+                    last_err = e
+            except Exception as e:
+                last_err = e
+        raise ValueError(
+            f"oqs: could not sign for {self.sig_id} (tried {self._name_candidates})."
+        ) from last_err
+
+    def verify(self, message: bytes, signature: bytes, verify_key: bytes) -> bool:
+        """Verify a signature. Returns True if valid, False if invalid."""
+        last_err = None
+        for name in self._name_candidates:
+            try:
+                with self._new_sig() as sig:
+                    return sig.verify(message, signature, verify_key)
+            except Exception as e:
+                last_err = e
+        raise ValueError(
+            f"oqs: could not verify for {self.sig_id} (tried {self._name_candidates})."
+        ) from last_err
+
+
+# -----------------------------
 # Key bundles
 # -----------------------------
 
@@ -159,6 +279,12 @@ class HybridRecipientKeys:
 
 
 def generate_hybrid_recipient_keys(pq_kem_id: str = DEFAULT_PQ_KEM_ID) -> HybridRecipientKeys:
+    """Generate X25519 + ML-KEM recipient key material for the hybrid scheme.
+
+    Args:
+        pq_kem_id: One of SUPPORTED_PQ_KEM_IDS (ML-KEM-512, ML-KEM-768, ML-KEM-1024).
+    """
+    validate_pq_kem_id(pq_kem_id)
     pq = OQSKEMBackend(pq_kem_id)
     pq_pk, pq_sk = pq.keygen()
     return HybridRecipientKeys(
@@ -167,6 +293,36 @@ def generate_hybrid_recipient_keys(pq_kem_id: str = DEFAULT_PQ_KEM_ID) -> Hybrid
         pq_secret_key=pq_sk,
         pq_kem_id=pq.kem_id,
     )
+
+
+@dataclass(frozen=True)
+class SigningKeys:
+    """ML-DSA signing key bundle for envelope authentication.
+
+    signing_key is the ML-DSA secret key (kept private by the signer).
+    verify_key  is the ML-DSA public key (used by verifiers; not stored in DB).
+    key_id      is a label used in records to identify which key was used.
+    """
+    sig_id:      str    # e.g. "ML-DSA-44"
+    signing_key: bytes  # ML-DSA secret key
+    verify_key:  bytes  # ML-DSA public key
+    key_id:      str = "sig-key-v1"
+
+
+def generate_sig_keys(
+    sig_id: str = "ML-DSA-65",
+    key_id: str = "sig-key-v1",
+) -> SigningKeys:
+    """Generate an ML-DSA signing key pair.
+
+    Args:
+        sig_id: One of SUPPORTED_PQ_SIG_IDS (ML-DSA-44, ML-DSA-65, ML-DSA-87).
+        key_id: Label for key management / DB records.
+    """
+    validate_pq_sig_id(sig_id)
+    backend = OQSSigBackend(sig_id)
+    vk, sk = backend.keygen()
+    return SigningKeys(sig_id=sig_id, signing_key=sk, verify_key=vk, key_id=key_id)
 
 
 # -----------------------------
@@ -196,6 +352,12 @@ class EncryptedRecord:
     # Hybrid-only fields:
     pq_kem_id: Optional[str] = None
     pq_ciphertext: Optional[bytes] = None
+
+    # Signature fields (present only when ML-DSA envelope signing is enabled).
+    # All three must be either all None (unsigned) or all set (signed).
+    sig_alg_id: Optional[str] = None   # "ML-DSA-44", "ML-DSA-65", or "ML-DSA-87"
+    signature:  Optional[bytes] = None # ML-DSA signature bytes over the canonical commitment
+    sig_key_id: Optional[str] = None   # label identifying the signing key used
 
     # Optional timing metrics:
     metrics: Optional[Dict[str, float]] = None
@@ -228,14 +390,146 @@ def _hkdf_derive_kek(ikm: bytes, *, salt: bytes, info: bytes, length: int = 32) 
     return hkdf.derive(ikm)
 
 
+# -----------------------------
+# Canonical envelope commitment
+# -----------------------------
+
+def _lv_encode(v: bytes) -> bytes:
+    """Length-value encode: 4-byte big-endian length prefix followed by value bytes."""
+    return struct.pack(">I", len(v)) + v
+
+
+def _lv_str(s: Optional[str]) -> bytes:
+    """Encode an optional string as UTF-8 length-value (empty bytes when None)."""
+    return _lv_encode(b"" if s is None else s.encode("utf-8"))
+
+
+def build_envelope_commitment(rec: EncryptedRecord) -> bytes:
+    """Build a canonical, deterministic byte string committing to all
+    security-relevant fields of an EncryptedRecord.
+
+    This is the exact byte string that ML-DSA signs on the write path and
+    that must be recomputed identically before verification on the read path.
+
+    Fields covered (in order):
+        domain_separator, version, scheme, payload_cipher, kem_id, kdf_id,
+        wrap_id, ciphertext, nonce, tag, aad, wrapped_dek, ephemeral_pubkey,
+        salt, hkdf_info, pq_kem_id, pq_ciphertext
+
+    Encoding rules:
+        - Domain separator: length-value encoded bytes.
+        - version: 4-byte big-endian integer (no length prefix).
+        - String fields: UTF-8 encoded, then length-value encoded.
+          Optional string fields encode as empty bytes when None.
+        - Bytes fields: length-value encoded.
+          Optional bytes fields encode as empty bytes when None.
+
+    The domain separator (COMMITMENT_DOMAIN_V1) prevents cross-context
+    commitment confusion.
+    """
+    return b"".join([
+        _lv_encode(COMMITMENT_DOMAIN_V1),
+        struct.pack(">I", rec.version),
+        _lv_str(rec.scheme),
+        _lv_str(rec.payload_cipher),
+        _lv_str(rec.kem_id),
+        _lv_str(rec.kdf_id),
+        _lv_str(rec.wrap_id),
+        _lv_encode(rec.ciphertext),
+        _lv_encode(rec.nonce),
+        _lv_encode(rec.tag),
+        _lv_encode(rec.aad),
+        _lv_encode(rec.wrapped_dek),
+        _lv_encode(rec.ephemeral_pubkey),
+        _lv_encode(rec.salt),
+        _lv_encode(rec.hkdf_info),
+        _lv_str(rec.pq_kem_id),
+        _lv_encode(rec.pq_ciphertext or b""),
+    ])
+
+
+def sign_envelope(
+    rec: EncryptedRecord,
+    signing_keys: SigningKeys,
+    *,
+    collect_metrics: bool = True,
+) -> Tuple["EncryptedRecord", Dict[str, float]]:
+    """Sign the canonical commitment of rec with ML-DSA.
+
+    Returns a new EncryptedRecord (copy of rec with sig fields populated)
+    and a metrics dict containing t_sig_sign_ms and signature_bytes.
+
+    The record must already be encrypted before calling this function.
+    Signing does not re-encrypt; it commits to the encrypted envelope fields.
+    """
+    backend = OQSSigBackend(signing_keys.sig_id)
+    commitment = build_envelope_commitment(rec)
+
+    metrics: Dict[str, float] = {}
+    t0 = _now_ms()
+    sig_bytes = backend.sign(commitment, signing_keys.signing_key)
+    if collect_metrics:
+        metrics["t_sig_sign_ms"] = _now_ms() - t0
+        metrics["signature_bytes"] = float(len(sig_bytes))
+
+    signed_rec = dataclasses.replace(
+        rec,
+        sig_alg_id=signing_keys.sig_id,
+        signature=sig_bytes,
+        sig_key_id=signing_keys.key_id,
+    )
+    return signed_rec, metrics
+
+
+def verify_envelope(
+    rec: EncryptedRecord,
+    verify_key: bytes,
+    *,
+    collect_metrics: bool = True,
+) -> Dict[str, float]:
+    """Verify the ML-DSA signature on rec's canonical commitment.
+
+    This must be called BEFORE decryption. Raises SigVerificationError if the
+    signature does not verify. Returns a metrics dict with t_sig_verify_ms.
+
+    Raises:
+        ValueError: if the record has no signature fields (programmer error).
+        SigVerificationError: if the signature is cryptographically invalid.
+    """
+    if rec.sig_alg_id is None or rec.signature is None:
+        raise ValueError("Record has no signature to verify (sig_alg_id/signature are None)")
+
+    backend = OQSSigBackend(rec.sig_alg_id)
+    commitment = build_envelope_commitment(rec)
+
+    metrics: Dict[str, float] = {}
+    t0 = _now_ms()
+    valid = backend.verify(commitment, rec.signature, verify_key)
+    if collect_metrics:
+        metrics["t_sig_verify_ms"] = _now_ms() - t0
+
+    if not valid:
+        raise SigVerificationError(
+            f"ML-DSA signature verification failed (alg={rec.sig_alg_id!r}, "
+            f"sig_key_id={rec.sig_key_id!r})"
+        )
+    return metrics
+
+
 def envelope_sizes(rec: EncryptedRecord) -> Dict[str, int]:
     """Return the byte length of every stored field in an EncryptedRecord.
 
-    Useful for storage-overhead analysis: compare these sizes across schemes
-    to quantify the extra bytes introduced by the PQ KEM layer.
+    Useful for storage-overhead analysis: compare sizes across schemes and
+    signature modes to quantify bytes introduced by the PQ KEM / DSA layers.
+
+    Definitions:
+      header_bytes       = nonce + tag + wrapped_dek + eph_pubkey + salt + hkdf_info + aad
+      overhead_bytes     = header_bytes + pq_ct_bytes + signature_bytes
+      total_stored_bytes = ciphertext_bytes + overhead_bytes
     """
-    pq_ct_len = len(rec.pq_ciphertext) if rec.pq_ciphertext else 0
-    # "header" = everything stored except the payload ciphertext and PQ ciphertext
+    pq_ct_len  = len(rec.pq_ciphertext) if rec.pq_ciphertext else 0
+    sig_len    = len(rec.signature)      if rec.signature      else 0
+    # "header" = fixed crypto metadata (excludes payload ciphertext, PQ ct, signature)
     header_bytes = (
         len(rec.nonce)
         + len(rec.tag)
@@ -245,7 +539,8 @@ def envelope_sizes(rec: EncryptedRecord) -> Dict[str, int]:
         + len(rec.hkdf_info)
         + len(rec.aad)
     )
-    total = len(rec.ciphertext) + header_bytes + pq_ct_len
+    overhead = header_bytes + pq_ct_len + sig_len
+    total    = len(rec.ciphertext) + overhead
     return {
         "ciphertext_bytes":    len(rec.ciphertext),
         "nonce_bytes":         len(rec.nonce),
@@ -256,8 +551,9 @@ def envelope_sizes(rec: EncryptedRecord) -> Dict[str, int]:
         "hkdf_info_bytes":     len(rec.hkdf_info),
         "aad_bytes":           len(rec.aad),
         "pq_ct_bytes":         pq_ct_len,
+        "signature_bytes":     sig_len,
         "header_bytes":        header_bytes,
-        "overhead_bytes":      header_bytes + pq_ct_len,
+        "overhead_bytes":      overhead,
         "total_stored_bytes":  total,
     }
 
@@ -292,6 +588,18 @@ def _validate_record(record: EncryptedRecord) -> None:
     else:
         if not record.pq_kem_id or record.pq_ciphertext is None:
             raise ValueError("Hybrid record missing PQ fields")
+
+    # Signature fields: all-or-nothing consistency.
+    sig_fields = (record.sig_alg_id, record.signature, record.sig_key_id)
+    n_set = sum(1 for f in sig_fields if f is not None)
+    if n_set not in (0, 3):
+        raise ValueError(
+            "Partial signature fields: sig_alg_id, signature, and sig_key_id "
+            "must all be present (signed) or all absent (unsigned)"
+        )
+    if n_set == 3:
+        if record.sig_alg_id not in SUPPORTED_PQ_SIG_IDS:
+            raise ValueError(f"Unsupported sig_alg_id in record: {record.sig_alg_id!r}")
 
 
 # -----------------------------
@@ -426,6 +734,7 @@ def hybrid_encrypt_v1(
     hkdf_info: bytes = DEFAULT_HKDF_INFO_HYBRID,
     collect_metrics: bool = True,
 ) -> EncryptedRecord:
+    validate_pq_kem_id(pq_kem_id)
     pq = OQSKEMBackend(pq_kem_id)
     metrics: Dict[str, float] = {}
 
@@ -631,26 +940,29 @@ def _smoke_test_stage2() -> None:
     assert out_c == plaintext
     print("OK: classical encrypt/decrypt")
 
-    # hybrid test
-    hybrid_recipient = generate_hybrid_recipient_keys(DEFAULT_PQ_KEM_ID)
-    rec_h = encrypt(
-        plaintext,
-        scheme="hybrid",
-        recipient_classical_pk=hybrid_recipient.classical.pk,
-        recipient_pq_pk=hybrid_recipient.pq_public_key,
-        pq_kem_id=hybrid_recipient.pq_kem_id,
-        aad=aad,
-        collect_metrics=True,
-    )
-    out_h, _ = decrypt(
-        rec_h,
-        recipient_classical_sk=hybrid_recipient.classical.sk,
-        recipient_pq_sk=hybrid_recipient.pq_secret_key,
-    )
-    assert out_h == plaintext
-    print("OK: hybrid encrypt/decrypt")
+    # hybrid test — exercise all three ML-KEM parameter sets
+    rec_h = None
+    hybrid_recipient = None
+    for kem_id in SUPPORTED_PQ_KEM_IDS:
+        hybrid_recipient = generate_hybrid_recipient_keys(kem_id)
+        rec_h = encrypt(
+            plaintext,
+            scheme="hybrid",
+            recipient_classical_pk=hybrid_recipient.classical.pk,
+            recipient_pq_pk=hybrid_recipient.pq_public_key,
+            pq_kem_id=hybrid_recipient.pq_kem_id,
+            aad=aad,
+            collect_metrics=True,
+        )
+        out_h, _ = decrypt(
+            rec_h,
+            recipient_classical_sk=hybrid_recipient.classical.sk,
+            recipient_pq_sk=hybrid_recipient.pq_secret_key,
+        )
+        assert out_h == plaintext
+        print(f"OK: hybrid encrypt/decrypt ({kem_id})")
 
-    # tamper test
+    # tamper test (AEAD)
     tampered = EncryptedRecord(**{**rec_h.__dict__, "aad": rec_h.aad[:-1] + b"X"})
     try:
         decrypt(
@@ -671,6 +983,48 @@ def _smoke_test_stage2() -> None:
         print("Hybrid metrics (ms):")
         for k, v in rec_h.metrics.items():
             print(f"  {k}: {v:.4f}")
+
+    # ── ML-DSA signature tests ────────────────────────────────────────────────
+    print()
+    print("== Stage 2 ML-DSA signature smoke test ==")
+
+    for sig_id in SUPPORTED_PQ_SIG_IDS:
+        sig_keys = generate_sig_keys(sig_id)
+        # Use the last hybrid record from the loop above
+        signed_rec, sign_metrics = sign_envelope(rec_h, sig_keys)
+        assert signed_rec.sig_alg_id == sig_id
+        assert signed_rec.signature is not None
+        assert signed_rec.sig_key_id == sig_keys.key_id
+        sig_size = len(signed_rec.signature)
+        print(f"OK: sign_envelope ({sig_id})  signature={sig_size} B  t={sign_metrics.get('t_sig_sign_ms', 0):.3f} ms")
+
+        # Verify the correct signature
+        verify_metrics = verify_envelope(signed_rec, sig_keys.verify_key)
+        print(f"OK: verify_envelope ({sig_id})  t={verify_metrics.get('t_sig_verify_ms', 0):.3f} ms")
+
+        # Tamper: flip one bit of the ciphertext → commitment changes → verify fails
+        tampered_ct = bytes([signed_rec.ciphertext[0] ^ 0x01]) + signed_rec.ciphertext[1:]
+        tampered_signed = dataclasses.replace(signed_rec, ciphertext=tampered_ct)
+        try:
+            verify_envelope(tampered_signed, sig_keys.verify_key)
+            raise AssertionError(f"Signature tamper NOT detected for {sig_id} (unexpected).")
+        except SigVerificationError:
+            print(f"OK: ciphertext tamper detected ({sig_id})")
+
+        # Tamper: mutate AAD → commitment changes → verify fails
+        tampered_aad = dataclasses.replace(signed_rec, aad=signed_rec.aad + b"X")
+        try:
+            verify_envelope(tampered_aad, sig_keys.verify_key)
+            raise AssertionError(f"Metadata tamper NOT detected for {sig_id} (unexpected).")
+        except SigVerificationError:
+            print(f"OK: AAD tamper detected ({sig_id})")
+
+    # Unsigned record has no sig fields
+    assert rec_h.sig_alg_id is None
+    assert rec_h.signature is None
+    sizes = envelope_sizes(rec_h)
+    assert sizes["signature_bytes"] == 0
+    print("OK: unsigned record has zero signature_bytes in envelope_sizes")
 
 
 if __name__ == "__main__":

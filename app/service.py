@@ -53,6 +53,9 @@ def _row_to_record(row: db.DbEncryptedRow) -> stage2.EncryptedRecord:
         hkdf_info=row.hkdf_info,
         pq_kem_id=row.pq_kem_id,
         pq_ciphertext=row.pq_ct,
+        sig_alg_id=row.sig_alg_id,
+        signature=row.signature,
+        sig_key_id=row.sig_key_id,
     )
 
 
@@ -69,8 +72,14 @@ def put_record(
     scheme: str,
     recipient_keys: Any,
     pq_kem_id: Optional[str] = None,
+    sig_keys: Optional["stage2.SigningKeys"] = None,
 ) -> Tuple[int, Dict[str, float]]:
-    """Encrypt plaintext and insert into the DB. Returns (record_id, timing_dict)."""
+    """Encrypt plaintext and insert into the DB. Returns (record_id, timing_dict).
+
+    If sig_keys is provided, the encrypted envelope is signed with ML-DSA
+    after encryption and the signature is stored alongside the record.
+    The sign step is timed separately as t_sig_sign_ms in the returned timings.
+    """
     t0 = time.perf_counter()
 
     if scheme == "classical":
@@ -93,6 +102,16 @@ def put_record(
         raise ValueError(f"Unknown scheme: {scheme!r}")
 
     t_encrypt = (time.perf_counter() - t0) * 1000.0
+
+    # Optional ML-DSA signing step (timed independently).
+    sign_ops: Dict[str, float] = {}
+    if sig_keys is not None:
+        t_sign_start = time.perf_counter()
+        rec, sign_ops = stage2.sign_envelope(rec, sig_keys)
+        t_sign = (time.perf_counter() - t_sign_start) * 1000.0
+    else:
+        t_sign = 0.0
+
     env_sizes = stage2.envelope_sizes(rec)
 
     # Time db_insert to include the audit write — both are committed DB operations
@@ -118,6 +137,9 @@ def put_record(
         salt=rec.salt,
         hkdf_info=rec.hkdf_info,
         pq_ct=rec.pq_ciphertext,
+        sig_alg_id=rec.sig_alg_id,
+        signature=rec.signature,
+        sig_key_id=rec.sig_key_id,
     )
     db.audit_event(
         conn,
@@ -131,12 +153,14 @@ def put_record(
     db_ms = (time.perf_counter() - t_db) * 1000.0
 
     total_ms = (time.perf_counter() - t0) * 1000.0
+    encrypt_ops = {**(rec.metrics or {}), **sign_ops}
     timings = {
         "encrypt": t_encrypt,
+        "sign": t_sign,
         "db_insert": db_ms,
         "total": total_ms,
         "envelope": env_sizes,
-        "encrypt_ops": rec.metrics or {},
+        "encrypt_ops": encrypt_ops,
     }
     return record_id, timings
 
@@ -149,14 +173,35 @@ def get_record(
     recipient_keys: Any,
     pq_sk: Optional[bytes] = None,
     include_deleted: bool = False,
+    sig_verify_key: Optional[bytes] = None,
 ) -> Tuple[bytes, Dict[str, float]]:
-    """Fetch and decrypt a record. Returns (plaintext, timing_dict)."""
+    """Fetch and decrypt a record. Returns (plaintext, timing_dict).
+
+    If the record carries a signature (sig_alg_id is set), verification is
+    performed BEFORE decryption.  sig_verify_key must be provided in that case;
+    omitting it raises ValueError.  Decryption is skipped if verification fails.
+
+    t_sig_verify_ms is reported in timings["decrypt_ops"] when verification runs.
+    """
     t0 = time.perf_counter()
 
     row, db_ms = db.fetch_record(
         conn, tenant_id=tenant_id, record_id=record_id, include_deleted=include_deleted
     )
     rec = _row_to_record(row)
+
+    # ML-DSA verification before decryption.
+    verify_ops: Dict[str, float] = {}
+    t_verify = 0.0
+    if rec.sig_alg_id is not None:
+        if sig_verify_key is None:
+            raise ValueError(
+                f"Record {record_id} is signed with {rec.sig_alg_id!r} "
+                "but no sig_verify_key was supplied for verification"
+            )
+        t_ver_start = time.perf_counter()
+        verify_ops = stage2.verify_envelope(rec, sig_verify_key)
+        t_verify = (time.perf_counter() - t_ver_start) * 1000.0
 
     t2 = time.perf_counter()
     if row.scheme == "classical":
@@ -169,7 +214,13 @@ def get_record(
         )
     t_decrypt = (time.perf_counter() - t2) * 1000.0
 
-    timings = {"db_fetch": db_ms, "decrypt": t_decrypt, "decrypt_ops": decrypt_ops}
+    combined_ops = {**verify_ops, **decrypt_ops}
+    timings = {
+        "db_fetch": db_ms,
+        "verify": t_verify,
+        "decrypt": t_decrypt,
+        "decrypt_ops": combined_ops,
+    }
     return pt, timings
 
 
@@ -195,10 +246,24 @@ def rotate_record_key(
     new_key_id: str,
     recipient_keys: Any,
     pq_sk: Optional[bytes] = None,
+    new_sig_keys: Optional["stage2.SigningKeys"] = None,
 ) -> Dict[str, Any]:
-    """
-    Rewrap the DEK under a new ephemeral key (ciphertext unchanged).
+    """Rewrap the DEK under a new ephemeral key (ciphertext unchanged).
+
     Returns {"mode": "rewrap"}.
+
+    Signature semantics after rotation
+    -----------------------------------
+    Rotation changes wrapped_dek, eph_pubkey, salt, and pq_ct — all fields
+    covered by the ML-DSA envelope commitment.  The existing signature therefore
+    becomes invalid after rotation.
+
+    Callers have two choices:
+      - Provide new_sig_keys: the envelope is re-signed under the new keys and
+        the updated signature is stored alongside the rotated wrap fields.
+      - Omit new_sig_keys (default): the signature columns are cleared to NULL
+        so the rotated record becomes unsigned.  This is the safe default when
+        re-signing at rotation time is not feasible.
     """
     row, _ = db.fetch_record(conn, tenant_id=tenant_id, record_id=record_id)
     rec = _row_to_record(row)
@@ -241,6 +306,37 @@ def rotate_record_key(
         new_wrapped_dek = keywrap.aes_key_wrap(new_kek, dek)
         new_pq_kem_id = rec.pq_kem_id
 
+    # Re-sign or clear signature after rotation.
+    new_sig_alg_id:  Optional[str]   = None
+    new_signature:   Optional[bytes] = None
+    new_sig_key_id:  Optional[str]   = None
+
+    if new_sig_keys is not None:
+        # Build a temporary EncryptedRecord with the rotated wrap fields to
+        # compute the new commitment, then sign it.
+        tmp_rec = stage2.EncryptedRecord(
+            version=rec.version,
+            scheme=rec.scheme,
+            payload_cipher=rec.payload_cipher,
+            kem_id=rec.kem_id,
+            kdf_id=rec.kdf_id,
+            wrap_id=rec.wrap_id,
+            ciphertext=rec.ciphertext,
+            nonce=rec.nonce,
+            tag=rec.tag,
+            aad=rec.aad,
+            wrapped_dek=new_wrapped_dek,
+            ephemeral_pubkey=new_eph_pk_raw,
+            salt=new_salt,
+            hkdf_info=rec.hkdf_info,
+            pq_kem_id=new_pq_kem_id,
+            pq_ciphertext=new_pq_ct,
+        )
+        signed_tmp, _ = stage2.sign_envelope(tmp_rec, new_sig_keys)
+        new_sig_alg_id = signed_tmp.sig_alg_id
+        new_signature  = signed_tmp.signature
+        new_sig_key_id = signed_tmp.sig_key_id
+
     db.update_wrap_fields(
         conn,
         tenant_id=tenant_id,
@@ -251,6 +347,9 @@ def rotate_record_key(
         salt=new_salt,
         pq_ct=new_pq_ct,
         pq_kem_id=new_pq_kem_id,
+        sig_alg_id=new_sig_alg_id,
+        signature=new_signature,
+        sig_key_id=new_sig_key_id,
     )
     db.audit_event(
         conn,

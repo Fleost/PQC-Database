@@ -17,8 +17,14 @@ env/
 # Docker
 *.Zone.Identifier
 
-# Results (generated — commit selectively)
-results/benchmark_results.json
+# Results and generated output — not committed
+results/
+
+# Real payload datasets — too large for version control
+Data/
+
+# Claude Code local settings
+.claude/
 
 # OS
 .DS_Store
