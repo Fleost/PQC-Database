@@ -14,7 +14,28 @@
       "Bash(python3:*)",
       "Bash(sudo chown:*)",
       "Bash(BENCHMARK_ARGS=\"--iterations 200 --warmup 10\" docker compose:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(curl:*)",
+      "Bash(zip:*)",
+      "Read(//home/nathan/**)",
+      "Bash(tar --exclude='pqc-db-eval/.git' --exclude='pqc-db-eval/.claude' -czf PQC-Database.zip pqc-db-eval)",
+      "Bash(awk:*)",
+      "Bash(sort -u echo \"---\" cut -f7 \"/home/nathan/pqc-db-eval/Data/igsr_30x GRCh38.tsv.tsv\")",
+      "Bash(cat:*)",
+      "WebSearch",
+      "WebFetch(domain:www.researchgate.net)",
+      "WebFetch(domain:mimic.mit.edu)",
+      "WebFetch(domain:github.com)",
+      "Bash(grep -oP '\\\\.\\\\w+$')",
+      "Bash(grep -oP '\\\\.\\\\w+\\(\\\\.gz\\)?$')",
+      "Bash(lscpu)",
+      "Bash(ls:*)",
+      "Bash(wget:*)",
+      "Bash(sort -k2)",
+      "Bash(grep \"_papu.vcf.gz$\")",
+      "Read(//tmp/**)",
+      "Bash(unzip -l faers_sample.zip)",
+      "Bash(unzip -p faers_sample.zip)"
     ]
   }
 }
