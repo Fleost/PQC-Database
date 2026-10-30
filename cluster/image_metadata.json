@@ -1,0 +1,21 @@
+{
+  "image_id": "sha256:e510fd2faf167f734b2ac11b5d18c0e7262fc0610c5891e3be113061c8e117c0",
+  "architecture": "x86_64",
+  "sif_bytes": 185937920,
+  "sif_sha256": "1e054d96a7d3cc20deec7c09a8d98f2fc37b552ca78efdc8d75a9422a0b8d5eb",
+  "apptainer_build_version": "1.5.4",
+  "apptainer_deb_sha256": "281cf9bd68f16b6f7c34a3a94d77668bc327b9c09db0412ce7890162734a97f7",
+  "liboqs_commit": "94b421ebb82405c843dba4e9aa521a56ee5a333d",
+  "liboqs_python_commit": "a6638076f494c1b53a5560160bddb3f8423e9175",
+  "source_sha256": {
+    "app/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "app/benchmark.py": "6c0c6ef0011a7af6d7c2773afa6509fc86e11dae5d938cd3606fc7df3f01f4cb",
+    "app/db.py": "66bb482b9e7318f16029e61bdedb55ada3c5644aa5f92173920fed5d86e8c02b",
+    "app/policy.py": "d9a092dac5b11f0418df13ce45b88de32d0e7685b5ad5594d41d2ebbfbc749a9",
+    "app/service.py": "a31db7298a6dc12fa6c5bc82cd3f4c60c362667ad310d0094bbf8f345f476144",
+    "app/stage2.py": "dd221ef0ad4f7f292aa90f5817a6d77195480d4dd5d202939e5c05f20bdeda07",
+    "app/stage3.py": "c871d7383ecf07ed06750c79deca155de4ebb9915507fa2bb5b4082ea75fcad4",
+    "app/hpc_pilot.py": "34b6865f53af833f097fd56748109c1217a4b25a7f501cc95efbc7b559c1b856",
+    "scripts/prepare_faers.py": "add272751c180ff1b0ec130db5836ff5c4a97b2346dbe887f727cac8fe01a83a"
+  }
+}
