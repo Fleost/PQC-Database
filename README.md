@@ -1,3 +1,12 @@
+# Rebuilt Babbage pilot
+
+See [cluster/README.md](cluster/README.md) for the quarter-separated FAERS
+pilot, required-signature reads, importance-aware policies, pooled latency
+statistics, logical envelope storage and Slurm deployment instructions.
+The new runner is `app.hpc_pilot`; legacy benchmark commands below do not
+implement the rebuilt pilot report format.
+
+
 # PQC Database Evaluation
 
 Benchmarks **classical** (X25519 + AES-256-GCM) versus **hybrid post-quantum** (X25519 + ML-KEM + AES-256-GCM) envelope encryption in a PostgreSQL-backed service, measuring end-to-end latency, per-primitive timing, and storage overhead across record sizes from 1 KB to 1 MB.

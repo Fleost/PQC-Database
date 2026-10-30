@@ -1,0 +1,156 @@
+[
+  {
+    "quarter": "2025Q4",
+    "documents": 50000,
+    "manifest_sha256": "dbee3af1ff1198de916d4dd5e37b9c360752887037d2735116972ac19c6475f9",
+    "total_payload_bytes": 153041268,
+    "flagged_documents": 4794,
+    "pilot_documents": 1000,
+    "pilot_flagged_documents": 95,
+    "pilot_manifest_sha256": "5ea68221621c5afb84bf3c0d6af58332fc819c80b05d4f683e4cd8bc7d69cea8",
+    "min_payload_bytes": 907,
+    "max_payload_bytes": 581332,
+    "mean_payload_bytes": 3060.82536,
+    "median_payload_bytes": 1697.0,
+    "reported_death_documents": 3375,
+    "reported_life_threatening_documents": 1743,
+    "both_outcomes_documents": 324,
+    "threshold_coverage": {
+      "10": {
+        "size_only_strong_documents": 1626,
+        "size_or_importance_strong_documents": 6055
+      },
+      "25": {
+        "size_only_strong_documents": 340,
+        "size_or_importance_strong_documents": 4945
+      },
+      "50": {
+        "size_only_strong_documents": 157,
+        "size_or_importance_strong_documents": 4832
+      },
+      "100": {
+        "size_only_strong_documents": 50,
+        "size_or_importance_strong_documents": 4802
+      },
+      "250": {
+        "size_only_strong_documents": 4,
+        "size_or_importance_strong_documents": 4795
+      }
+    },
+    "size_bins": [
+      {
+        "lower_exclusive_bytes": 0,
+        "upper_inclusive_bytes": 10240,
+        "documents": 48374,
+        "payload_bytes": 112462793
+      },
+      {
+        "lower_exclusive_bytes": 10240,
+        "upper_inclusive_bytes": 25600,
+        "documents": 1286,
+        "payload_bytes": 18596382
+      },
+      {
+        "lower_exclusive_bytes": 25600,
+        "upper_inclusive_bytes": 51200,
+        "documents": 183,
+        "payload_bytes": 6334507
+      },
+      {
+        "lower_exclusive_bytes": 51200,
+        "upper_inclusive_bytes": 102400,
+        "documents": 107,
+        "payload_bytes": 7656858
+      },
+      {
+        "lower_exclusive_bytes": 102400,
+        "upper_inclusive_bytes": 256000,
+        "documents": 46,
+        "payload_bytes": 6445518
+      },
+      {
+        "lower_exclusive_bytes": 256000,
+        "upper_inclusive_bytes": null,
+        "documents": 4,
+        "payload_bytes": 1545210
+      }
+    ]
+  },
+  {
+    "quarter": "2026Q1",
+    "documents": 50000,
+    "manifest_sha256": "5d7f9e4a447af3711b68258acd219b41e6e1785e582fedea81d0c5d8ae9d6b08",
+    "total_payload_bytes": 145498507,
+    "flagged_documents": 5331,
+    "pilot_documents": 1000,
+    "pilot_flagged_documents": 106,
+    "pilot_manifest_sha256": "1667976004a4b2c3b7a8533d11292868fc2038af5baf4daa1a5c05c662a8fff4",
+    "min_payload_bytes": 907,
+    "max_payload_bytes": 1035845,
+    "mean_payload_bytes": 2909.97014,
+    "median_payload_bytes": 1630.0,
+    "reported_death_documents": 3928,
+    "reported_life_threatening_documents": 1731,
+    "both_outcomes_documents": 328,
+    "threshold_coverage": {
+      "10": {
+        "size_only_strong_documents": 1347,
+        "size_or_importance_strong_documents": 6375
+      },
+      "25": {
+        "size_only_strong_documents": 274,
+        "size_or_importance_strong_documents": 5450
+      },
+      "50": {
+        "size_only_strong_documents": 134,
+        "size_or_importance_strong_documents": 5370
+      },
+      "100": {
+        "size_only_strong_documents": 46,
+        "size_or_importance_strong_documents": 5346
+      },
+      "250": {
+        "size_only_strong_documents": 5,
+        "size_or_importance_strong_documents": 5333
+      }
+    },
+    "size_bins": [
+      {
+        "lower_exclusive_bytes": 0,
+        "upper_inclusive_bytes": 10240,
+        "documents": 48653,
+        "payload_bytes": 110596266
+      },
+      {
+        "lower_exclusive_bytes": 10240,
+        "upper_inclusive_bytes": 25600,
+        "documents": 1073,
+        "payload_bytes": 15050220
+      },
+      {
+        "lower_exclusive_bytes": 25600,
+        "upper_inclusive_bytes": 51200,
+        "documents": 140,
+        "payload_bytes": 4930616
+      },
+      {
+        "lower_exclusive_bytes": 51200,
+        "upper_inclusive_bytes": 102400,
+        "documents": 88,
+        "payload_bytes": 6223933
+      },
+      {
+        "lower_exclusive_bytes": 102400,
+        "upper_inclusive_bytes": 256000,
+        "documents": 41,
+        "payload_bytes": 6278339
+      },
+      {
+        "lower_exclusive_bytes": 256000,
+        "upper_inclusive_bytes": null,
+        "documents": 5,
+        "payload_bytes": 2419133
+      }
+    ]
+  }
+]

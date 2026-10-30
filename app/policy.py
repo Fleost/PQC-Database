@@ -67,6 +67,7 @@ class PolicyDecision:
     sig_id: str
     tier_label: str
     escalated: bool
+    elevation_reason: str = "neither"
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +78,8 @@ class PolicyDecision:
 def select_policy_for_record(
     record_size_bytes: int,
     config: ThresholdPolicyConfig | None = None,
+    *,
+    elevation_flag: bool = False,
 ) -> PolicyDecision:
     """Return the appropriate PQ policy decision for a record of the given size.
 
@@ -104,7 +107,11 @@ def select_policy_for_record(
     _validate_record_size(record_size_bytes)
     _validate_threshold(config.threshold_bytes)
 
-    escalated = record_size_bytes > config.threshold_bytes
+    if type(elevation_flag) is not bool:
+        raise TypeError("elevation_flag must be bool")
+    size_elevated = record_size_bytes > config.threshold_bytes
+    escalated = size_elevated or elevation_flag
+    reason = "both" if size_elevated and elevation_flag else "size_only" if size_elevated else "flag_only" if elevation_flag else "neither"
 
     if escalated:
         kem_id = config.strong_kem_id
@@ -122,6 +129,7 @@ def select_policy_for_record(
         sig_id=sig_id,
         tier_label=tier_label,
         escalated=escalated,
+        elevation_reason=reason,
     )
 
 

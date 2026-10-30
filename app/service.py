@@ -174,6 +174,8 @@ def get_record(
     pq_sk: Optional[bytes] = None,
     include_deleted: bool = False,
     sig_verify_key: Optional[bytes] = None,
+    require_signature: bool = False,
+    expected_sig_id: Optional[str] = None,
 ) -> Tuple[bytes, Dict[str, float]]:
     """Fetch and decrypt a record. Returns (plaintext, timing_dict).
 
@@ -189,6 +191,13 @@ def get_record(
         conn, tenant_id=tenant_id, record_id=record_id, include_deleted=include_deleted
     )
     rec = _row_to_record(row)
+
+    # A caller expecting authenticated data must reject stripped signatures.
+    signature_required = require_signature or sig_verify_key is not None or expected_sig_id is not None
+    if signature_required and not all((rec.sig_alg_id, rec.signature, rec.sig_key_id)):
+        raise ValueError("Required signature fields are missing")
+    if expected_sig_id is not None and rec.sig_alg_id != expected_sig_id:
+        raise ValueError("Signature algorithm does not match the expected policy")
 
     # ML-DSA verification before decryption.
     verify_ops: Dict[str, float] = {}

@@ -1,0 +1,92 @@
+{
+  "quarter": "2026Q1",
+  "sample_size": 50000,
+  "seed": 42,
+  "eligible_latest_cases": 397224,
+  "selection": "seeded random without replacement; latest numeric caseversion within quarter",
+  "source_rows": {
+    "DEMO": 397224,
+    "DRUG": 1703210,
+    "REAC": 1330675,
+    "INDI": 1139940,
+    "OUTC": 291580,
+    "RPSR": 11426,
+    "THER": 404946
+  },
+  "source_files": [
+    {
+      "name": "DEMO26Q1_part001.txt",
+      "sha256": "1e5fac3b0c0a93adf98dd607ced4bd5ac0afbb04272fe574dde2dce36cdd68a9"
+    },
+    {
+      "name": "DEMO26Q1_part002.txt",
+      "sha256": "ecd23c32693d69247b3576a0f8fca3ae48865b39737041809c2b93664779c558"
+    },
+    {
+      "name": "DEMO26Q1_part003.txt",
+      "sha256": "7a499b9c7687b0df00e1c9539392bb78340e12cc1d48972f038330c8f668da73"
+    },
+    {
+      "name": "DRUG26Q1_part001.txt",
+      "sha256": "3a166245a330c57969f6a1d2fb7cc9b29d35d899e84da9f0c774057c8ccad64c"
+    },
+    {
+      "name": "DRUG26Q1_part002.txt",
+      "sha256": "aba2dd493a61d1390965b3b964d47a3cd8d6a7197d2f84eaa7cd78628e2d4a5d"
+    },
+    {
+      "name": "DRUG26Q1_part003.txt",
+      "sha256": "2253a890d3c8afd699972436de5375cdbccf0503d86423f004db60420aa429e9"
+    },
+    {
+      "name": "DRUG26Q1_part004.txt",
+      "sha256": "d79b23e4bc5815c3c5cbd98cedbdcace7aedb1cea2c815fab4c238cb10f02862"
+    },
+    {
+      "name": "DRUG26Q1_part005.txt",
+      "sha256": "7423dfd09a1f9773a4276d5f1295b3836f61d9fad53687e7a64ab0f80b3d43bb"
+    },
+    {
+      "name": "DRUG26Q1_part006.txt",
+      "sha256": "98775192795935adc7e5244e8d9dcaad56d954786c634b3aedb6757263eee231"
+    },
+    {
+      "name": "DRUG26Q1_part007.txt",
+      "sha256": "caba094a6b9f16f4bc68ad32edd13771371581fa7578630b402f14973ad0f173"
+    },
+    {
+      "name": "REAC26Q1_part001.txt",
+      "sha256": "f177c41e31f78918ced8cfd9383580d6699f058939a3294a84b48371274eb0f7"
+    },
+    {
+      "name": "REAC26Q1_part002.txt",
+      "sha256": "8a580b250920cac4d17e9b3ec0d35efdca62e9cca739614bb49a51b01dbb2703"
+    },
+    {
+      "name": "INDI26Q1_part001.txt",
+      "sha256": "3524aed39cb261a1e301214d95fbd10a8d8d01fc7f04af40720ab161d1334759"
+    },
+    {
+      "name": "INDI26Q1_part002.txt",
+      "sha256": "16c99cf24f5d2f6926065eb27c83f7cb37f3ec35bb52efc63eb6b7fa63d6dcb0"
+    },
+    {
+      "name": "INDI26Q1_part003.txt",
+      "sha256": "43d77c370ad2885717b7459dacb60a539eb64a54defc628d0e801363ec584bbd"
+    },
+    {
+      "name": "OUTC26Q1.txt",
+      "sha256": "1b9d9b348b3068ab50d35ae1174ae391692e6a04a64ce2e1ee97212d086ef46c"
+    },
+    {
+      "name": "RPSR26Q1.txt",
+      "sha256": "4768a41bc18e2dd7771917cf0a03348f22858ca980fe1c6911ec44775580908c"
+    },
+    {
+      "name": "THER26Q1.txt",
+      "sha256": "81e75889f0e5b0ac91e1f1b4b86d64b1a6821f76e49ea7558fd6717f4f255a4c"
+    }
+  ],
+  "warning": "Reported DE/LT outcomes are prioritization metadata, not evidence of drug causation",
+  "preparation_script_sha256": "add272751c180ff1b0ec130db5836ff5c4a97b2346dbe887f727cac8fe01a83a"
+}

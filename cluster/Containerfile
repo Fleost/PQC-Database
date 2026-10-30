@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1
+FROM postgres@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d AS build
+ENV DEBIAN_FRONTEND=noninteractive
+RUN --mount=type=secret,id=proxy_ca,required=true \
+    rm -f /etc/apt/sources.list.d/pgdg.list /etc/apt/sources.list.d/pgdg.sources && \
+    apt-get -o Acquire::https::CaInfo=/run/secrets/proxy_ca update && \
+    apt-get -o Acquire::https::CaInfo=/run/secrets/proxy_ca install -y --no-install-recommends python3 python3-venv python3-dev build-essential cmake ninja-build libssl-dev ca-certificates
+COPY liboqs-src /src/liboqs
+RUN cmake -S /src/liboqs -B /src/build -GNinja -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=ON -DOQS_BUILD_ONLY_LIB=ON -DOQS_DIST_BUILD=ON \
+    '-DOQS_MINIMAL_BUILD=KEM_ml_kem_512;KEM_ml_kem_768;KEM_ml_kem_1024;SIG_ml_dsa_44;SIG_ml_dsa_65;SIG_ml_dsa_87' \
+    -DCMAKE_INSTALL_PREFIX=/opt/oqs && cmake --build /src/build -j4 && cmake --install /src/build
+COPY liboqs-python-src /src/wrapper
+RUN --mount=type=secret,id=proxy_ca,required=true \
+    python3 -m venv /opt/venv && \
+    PIP_CERT=/run/secrets/proxy_ca /opt/venv/bin/pip install --no-cache-dir \
+    cryptography==50.0.2 'psycopg[binary]==3.3.6' cffi==2.1.1 pycparser==3.11 typing-extensions==4.16.0 /src/wrapper && \
+    /opt/venv/bin/pip check
+
+FROM postgres@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d
+ENV DEBIAN_FRONTEND=noninteractive
+RUN --mount=type=secret,id=proxy_ca,required=true \
+    rm -f /etc/apt/sources.list.d/pgdg.list /etc/apt/sources.list.d/pgdg.sources && \
+    apt-get -o Acquire::https::CaInfo=/run/secrets/proxy_ca update && \
+    apt-get -o Acquire::https::CaInfo=/run/secrets/proxy_ca install -y --no-install-recommends python3 python3-venv libssl3t64 ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+COPY --from=build /opt/venv /opt/venv
+COPY --from=build /opt/oqs /opt/oqs
+COPY app /opt/pilot/app
+COPY datasets /opt/pilot/datasets
+COPY container_entry.sh /opt/pilot/container_entry.sh
+RUN chmod -R a+rX /opt/pilot /opt/venv /opt/oqs && mkdir /job /results
+ENV PATH=/opt/venv/bin:/usr/lib/postgresql/16/bin:$PATH \
+    OQS_INSTALL_PATH=/opt/oqs LD_LIBRARY_PATH=/opt/oqs/lib \
+    PYTHONPATH=/opt/pilot PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+WORKDIR /opt/pilot
+ENTRYPOINT ["bash", "/opt/pilot/container_entry.sh"]

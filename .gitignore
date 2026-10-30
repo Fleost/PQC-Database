@@ -29,3 +29,8 @@ Data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Assembled HPC image and job outputs (delivery chunks remain tracked)
+cluster/pilot.sif
+cluster/results/
+cluster/pqc-pilot-*.out

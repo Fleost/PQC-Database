@@ -274,18 +274,18 @@ class TestVerifyKeyAlignment:
 
 
 # ---------------------------------------------------------------------------
-# Default threshold is 10 MiB
+# Default threshold is 50 KiB
 # ---------------------------------------------------------------------------
 
 
 class TestDefaultThresholdInBenchmark:
-    def test_adaptive_uses_10_mib_default(self):
-        # When called with DEFAULT_THRESHOLD_BYTES, behaviour matches 10-MiB expectation.
-        d_at = _resolve_policy_decision("adaptive_threshold", _10_MIB, DEFAULT_THRESHOLD_BYTES)
+    def test_adaptive_uses_50_kib_default(self):
+        # The code default is 50 KiB; equality stays baseline.
+        d_at = _resolve_policy_decision("adaptive_threshold", 50 * 1024, DEFAULT_THRESHOLD_BYTES)
         assert d_at.tier_label == "baseline"   # at threshold → baseline
 
-        d_above = _resolve_policy_decision("adaptive_threshold", _10_MIB + 1, DEFAULT_THRESHOLD_BYTES)
+        d_above = _resolve_policy_decision("adaptive_threshold", 50 * 1024 + 1, DEFAULT_THRESHOLD_BYTES)
         assert d_above.tier_label == "strong"  # above threshold → strong
 
     def test_default_threshold_bytes_value(self):
-        assert DEFAULT_THRESHOLD_BYTES == 10 * 1024 * 1024
+        assert DEFAULT_THRESHOLD_BYTES == 50 * 1024
