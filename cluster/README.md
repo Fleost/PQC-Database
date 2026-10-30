@@ -25,6 +25,16 @@ contain `"status": "passed"`, a passed security selftest, and 24 reports.
 After it passes, run `bash submit.sh` for the 1,000-document-per-quarter pilot,
 two measured and two warmup repetitions (48,000 measured roundtrips).
 
+For an independent reconciliation after either run, use the directory from
+its `RESULTS=` line:
+
+```bash
+python3 ../scripts/validate_pilot.py /absolute/path/to/results/pilot
+```
+
+This checks the 24 configurations, raw operation counts, actual algorithms,
+paired order, pooled latency statistics and unique-document storage totals.
+
 The script requests `research-cpu`, one node, one task, four CPU cores, 8 GiB
 RAM, and two hours. It loads `apptainer/1.5.4`. These match the supplied Babbage
 module/partition listing; node-level execution still requires the quick job.

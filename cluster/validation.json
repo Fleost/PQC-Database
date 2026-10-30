@@ -1,0 +1,27 @@
+{
+  "status": "passed",
+  "configurations": 24,
+  "measured_roundtrips": 48000,
+  "quarters": [
+    "2025Q4",
+    "2026Q1"
+  ],
+  "independent_raw_reconciliation": true,
+  "unit_tests_passed": 154,
+  "security_selftest": "passed",
+  "warmup_roundtrips": 48000,
+  "documents_per_quarter": 1000,
+  "iterations": 2,
+  "warmups": 2,
+  "resources": {
+    "cpus": 4,
+    "memory_gib": 8,
+    "network": "none",
+    "user": "non-root"
+  },
+  "runtime_engine": "Docker (native Apptainer execution requires Babbage quick job)",
+  "postgres_stopped_on_exit": true,
+  "fresh_github_download_and_image_reassembly": "passed",
+  "configuration_elapsed_seconds_sum": 557.6323915920011,
+  "acceptance_results_warning": "Local cloud acceptance measurements; not Babbage study measurements"
+}

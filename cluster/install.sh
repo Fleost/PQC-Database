@@ -2,6 +2,9 @@
 # Run from the delivery branch checkout; no internet or root required here.
 set -euo pipefail
 cd "$(dirname "$0")"
+if [[ -f PACKAGE_SHA256SUMS ]]; then
+    sha256sum -c PACKAGE_SHA256SUMS
+fi
 sha256sum -c payload/SHA256SUMS
 if [[ -e pilot.sif ]]; then
     sha256sum -c pilot.sif.sha256
