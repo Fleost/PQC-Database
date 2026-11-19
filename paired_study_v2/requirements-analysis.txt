@@ -1,0 +1,6 @@
+# Host-side dependencies for build_faers_records.py, analyze_paired.py and make_figure_package.py.
+# (The benchmark container uses requirements.txt.)  Versions used for the published analysis.
+numpy==2.5.4
+pandas==3.1.1
+scipy==1.18.1
+matplotlib==3.11.2

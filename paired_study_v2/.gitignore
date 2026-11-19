@@ -1,0 +1,9 @@
+# Generated locally by the steps in README.md; too large for version control
+Data/
+results/
+analysis_package/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
